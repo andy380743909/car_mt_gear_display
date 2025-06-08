@@ -6,6 +6,13 @@
 // 8x8点阵屏引脚配置 (DIN, CLK, CS, 数量)
 LedControl lc = LedControl(12, 11, 10, 1);
 
+const int LIGHTSENSOR_PIN = A2;  // 光线传感器引脚
+// 亮度级别配置
+const int MIN_BRIGHTNESS = 0;      // 最暗亮度
+const int MAX_BRIGHTNESS = 15;     // 最亮亮度
+const int DARK_THRESHOLD = 200;    // 暗环境阈值
+const int BRIGHT_THRESHOLD = 600;  // 亮环境阈值
+
 // 霍尔传感器引脚
 #define HALL_SENSOR1 A0
 #define HALL_SENSOR2 A1
@@ -157,6 +164,12 @@ struct HallData {
 HallData savedValues[numChars];  // 存储的校准值
 bool isSetupMode = false;        // 当前模式标志
 
+unsigned long previousMillisA = 0;  // 上次执行任务A的时间
+unsigned long previousMillisB = 0;  // 上次执行任务B的时间
+
+const unsigned long intervalA = 1000;  // 任务A的间隔：1000毫秒
+const unsigned long intervalB = 500;   // 任务B的间隔：500毫秒
+
 void setup() {
 
 #ifdef DEBUG
@@ -250,6 +263,24 @@ void runSetupMode() {
 
 // ====== 运行模式 ======
 void runNormalMode() {
+
+  unsigned long currentMillis = millis();
+
+  // 任务A：每1000毫秒执行一次
+  if (previousMillisA == 0 || currentMillis - previousMillisA >= intervalA) {
+    previousMillisA = currentMillis;
+    taskAutoUpdateLEDBrightness();
+  }
+
+  // 任务B：每500毫秒执行一次
+  if (previousMillisB == 0 || currentMillis - previousMillisB >= intervalB) {
+    previousMillisB = currentMillis;
+    taskUpdateGearDisplay();
+  }
+
+}
+
+void taskUpdateGearDisplay() {
   // 读取霍尔传感器
   int hall1 = analogRead(HALL_SENSOR1);
   int hall2 = analogRead(HALL_SENSOR2);
@@ -270,8 +301,50 @@ void runNormalMode() {
     displayChar(calibrationChars[bestMatch]);
   }
 
-  delay(500);  // 适当延时减少刷新率
+  // delay(500);  // 适当延时减少刷新率
 }
+
+// ======= 屏幕亮度自动调节 ===========
+void taskAutoUpdateLEDBrightness() {
+  // 1. 读取光线传感器
+  int lightLevel = analogRead(LIGHTSENSOR_PIN);
+
+  // 2. 根据光线计算亮度
+  int brightness = calculateBrightness(lightLevel);
+
+  // 3. 更新LED亮度
+  lc.setIntensity(0, brightness);
+
+#if DEBUG
+  // 4. 在串口显示调试信息
+  Serial.print("光线值: ");
+  Serial.print(lightLevel);
+  Serial.print(" | 亮度级: ");
+  Serial.println(brightness);
+#endif
+
+  // 5. 每秒更新一次
+  // delay(1000);
+}
+
+// 根据光线值计算亮度级别
+int calculateBrightness(int lightLevel) {
+  // 黑暗环境：最大亮度
+  if (lightLevel < DARK_THRESHOLD) {
+    return MAX_BRIGHTNESS;
+  }
+  // 明亮环境：最小亮度
+  else if (lightLevel > BRIGHT_THRESHOLD) {
+    return MIN_BRIGHTNESS;
+  }
+  // 中等环境：线性渐变
+  else {
+    // 将光线值映射到亮度范围
+    return map(lightLevel, DARK_THRESHOLD, BRIGHT_THRESHOLD,
+               MAX_BRIGHTNESS, MIN_BRIGHTNESS);
+  }
+}
+
 
 // ====== 辅助函数 ======
 // 在点阵屏上显示字符
