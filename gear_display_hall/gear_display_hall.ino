@@ -11,7 +11,7 @@ const int LIGHTSENSOR_PIN = A2;  // 光线传感器引脚
 const int MIN_BRIGHTNESS = 0;      // 最暗亮度
 const int MAX_BRIGHTNESS = 15;     // 最亮亮度
 const int DARK_THRESHOLD = 200;    // 暗环境阈值
-const int BRIGHT_THRESHOLD = 600;  // 亮环境阈值
+const int BRIGHT_THRESHOLD = 800;  // 亮环境阈值
 
 // 霍尔传感器引脚
 #define HALL_SENSOR1 A0
@@ -97,7 +97,8 @@ unsigned char font2[][8] = {
   { 0x00, 0xc6, 0xc6, 0xc6, 0xd6, 0xfe, 0xee, 0xc6 },  // W
   { 0x00, 0xc6, 0xc6, 0x6c, 0x38, 0x6c, 0xc6, 0xc6 },  // X
   { 0x00, 0x66, 0x66, 0x66, 0x3c, 0x18, 0x18, 0x18 },  // Y
-  { 0x00, 0x7e, 0x60, 0x30, 0x18, 0x0c, 0x06, 0x7e }   // Z
+  { 0x00, 0x7e, 0x60, 0x30, 0x18, 0x0c, 0x06, 0x7e },  // Z
+  { 0x00, 0x00, 0x00, 0xe7, 0xe7, 0x00, 0x00, 0x00 },  // null
 };
 
 /*
@@ -227,12 +228,15 @@ void runSetupMode() {
     long sum1 = 0, sum2 = 0;
     int samples = 0;
     unsigned long startTime = millis();
-
-    while (millis() - startTime < 2000) {
-      sum1 += analogRead(HALL_SENSOR1);
-      sum2 += analogRead(HALL_SENSOR2);
-      samples++;
-      delay(10);
+    unsigned long deltaTime = 0;
+    while (deltaTime < 3000) {
+      if (deltaTime >= 1000) {
+        sum1 += analogRead(HALL_SENSOR1);
+        sum2 += analogRead(HALL_SENSOR2);
+        samples++;
+        delay(10);
+      }
+      deltaTime = millis() - startTime;
     }
 
     // 保存平均值
@@ -277,7 +281,6 @@ void runNormalMode() {
     previousMillisB = currentMillis;
     taskUpdateGearDisplay();
   }
-
 }
 
 void taskUpdateGearDisplay() {
@@ -299,6 +302,8 @@ void taskUpdateGearDisplay() {
   // 显示匹配的字符
   if (bestMatch >= 0) {
     displayChar(calibrationChars[bestMatch]);
+  } else {
+    displayCharForNull();
   }
 
   // delay(500);  // 适当延时减少刷新率
@@ -309,13 +314,14 @@ void taskAutoUpdateLEDBrightness() {
   // 1. 读取光线传感器
   int lightLevel = analogRead(LIGHTSENSOR_PIN);
 
+
   // 2. 根据光线计算亮度
   int brightness = calculateBrightness(lightLevel);
 
   // 3. 更新LED亮度
   lc.setIntensity(0, brightness);
 
-#if DEBUG
+#ifdef DEBUG
   // 4. 在串口显示调试信息
   Serial.print("光线值: ");
   Serial.print(lightLevel);
@@ -325,6 +331,23 @@ void taskAutoUpdateLEDBrightness() {
 
   // 5. 每秒更新一次
   // delay(1000);
+
+  /*
+  // TEST
+  int lightLevel1 = analogRead(HALL_SENSOR1);
+  // 2. 根据光线计算亮度
+  int brightness1 = calculateBrightness(lightLevel1);
+  // 3. 更新LED亮度
+  lc.setIntensity(0, brightness1);
+
+#ifdef DEBUG
+  // 4. 在串口显示调试信息
+  Serial.print("光线值: ");
+  Serial.print(lightLevel);
+  Serial.print(" | 亮度级: ");
+  Serial.println(brightness);
+#endif
+*/
 }
 
 // 根据光线值计算亮度级别
@@ -347,6 +370,11 @@ int calculateBrightness(int lightLevel) {
 
 
 // ====== 辅助函数 ======
+
+void displayCharForNull() {
+  displayChar(36);
+}
+
 // 在点阵屏上显示字符
 void displayChar(int charIndex) {
   for (int row = 0; row < 8; row++) {
@@ -385,9 +413,14 @@ int findBestMatch(int hall1, int hall2) {
     if (diff < minDiff) {
       minDiff = diff;
       bestIndex = i;
+      Serial.print(i);
+      Serial.print(", find diff: ");
+      Serial.println(minDiff);
     }
   }
-
+  if (minDiff > 20) {
+    return -1;
+  }
   return bestIndex;
 }
 
